@@ -1,0 +1,85 @@
+=== modified file 'nova/compute/manager.py'
+--- nova/compute/manager.py	2011-07-21 17:37:32 +0000
++++ nova/compute/manager.py	2011-07-22 13:26:11 +0000
+@@ -146,7 +146,26 @@
+ 
+     def init_host(self):
+         """Initialization for a standalone compute service."""
++        # NOTE(nsokolov): based on itoumsn's implementation from libvirt driver
++        from nova import context
+         self.driver.init_host(host=self.host)
++        admin_context = context.get_admin_context()
++        for instance in self.db.instance_get_all_by_host(admin_context, self.host):
++            try:
++                LOG.debug(_('Checking state of %s'), instance['name'])
++                state = self.driver.get_info(instance['name'])['state']
++            except exception.NotFound:
++                state = power_state.SHUTOFF
++
++            LOG.debug(_('Current state of %(name)s is %(state)s, state in DB is %(db_state)s.'),
++                          {'name': instance['name'], 'state': state, 'db_state': instance['state']})
++
++            if instance['state'] == power_state.RUNNING and state != power_state.RUNNING \
++                and FLAGS.start_guests_on_host_boot:
++                LOG.debug(_('Rebooting instance %(name)s after nova-compute restart.'))
++                self.reboot_instance(admin_context, instance[id])
++            else:
++                self.db.instance_set_state(ctxt, instance['id'], state)
+ 
+     def _update_state(self, context, instance_id, state=None):
+         """Update the state of an instance from the driver info."""
+
+=== modified file 'nova/flags.py'
+--- nova/flags.py	2011-07-08 22:12:14 +0000
++++ nova/flags.py	2011-07-22 13:26:11 +0000
+@@ -387,3 +387,6 @@
+                  'Key/Multi-value list representng capabilities of this zone')
+ DEFINE_string('build_plan_encryption_key', None,
+         '128bit (hex) encryption key for scheduler build plans.')
++
++DEFINE_bool('start_guests_on_host_boot', False,
++            'Whether to restart guests when the host reboots')
+
+=== modified file 'nova/virt/libvirt/connection.py'
+--- nova/virt/libvirt/connection.py	2011-07-21 03:22:29 +0000
++++ nova/virt/libvirt/connection.py	2011-07-22 13:26:11 +0000
+@@ -121,8 +121,6 @@
+                     'Define live migration behavior')
+ flags.DEFINE_string('qemu_img', 'qemu-img',
+                     'binary to use for qemu-img commands')
+-flags.DEFINE_bool('start_guests_on_host_boot', False,
+-                  'Whether to restart guests when the host reboots')
+ 
+ 
+ def get_connection(read_only):
+@@ -167,27 +165,8 @@
+         self.firewall_driver = fw_class(get_connection=self._get_connection)
+ 
+     def init_host(self, host):
+-        # Adopt existing VM's running here
+-        ctxt = context.get_admin_context()
+-        for instance in db.instance_get_all_by_host(ctxt, host):
+-            try:
+-                LOG.debug(_('Checking state of %s'), instance['name'])
+-                state = self.get_info(instance['name'])['state']
+-            except exception.NotFound:
+-                state = power_state.SHUTOFF
+-
+-            LOG.debug(_('Current state of %(name)s was %(state)s.'),
+-                          {'name': instance['name'], 'state': state})
+-            db.instance_set_state(ctxt, instance['id'], state)
+-
+-            # NOTE(justinsb): We no longer delete SHUTOFF instances,
+-            # the user may want to power them back on
+-
+-            if state != power_state.RUNNING:
+-                continue
+-            self.firewall_driver.setup_basic_filtering(instance)
+-            self.firewall_driver.prepare_instance_filter(instance)
+-            self.firewall_driver.apply_instance_filter(instance)
++        # NOTE(nsokolov): moved instance restarting to ComputeManager
++        pass
+ 
+     def _get_connection(self):
+         if not self._wrapped_conn or not self._test_connection():
+
