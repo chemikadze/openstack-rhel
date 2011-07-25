@@ -6,7 +6,7 @@
 
 Name:             openstack-nova
 Version:          2011.3
-Release:          0.20110629.1133.4%{?dist}
+Release:          0.20110629.1133.5%{?dist}
 Summary:          OpenStack Compute (nova)
 
 Group:            Development/Languages
@@ -41,6 +41,7 @@ Patch6:           %{name}-s3server-quickfix.patch
 Patch7:           %{name}-scsi-target-utils-support.patch
 Patch8:           %{name}-rpc-improvements.patch
 Patch9:           %{name}-api-graceful-shutdown.patch
+Patch10:           %{name}-driver-agnostic-restart-instances.patch
 
 BuildRoot:        %{_tmppath}/nova-%{version}-%{release}-root-%(%{__id_u} -n)
 
@@ -324,6 +325,7 @@ This package contains documentation files for %{name}.
 %patch7 -p1
 #patch8 -p1
 %patch9 -p0
+%patch10 -p0
 
 install %{SOURCE1} README.rhel6
 
@@ -663,6 +665,9 @@ fi
 %files node-compute
 
 %changelog
+* Thu Jul 21 2011 Nikolay Sokolov <nsokolov@griddynamics.com> - 2011.3-0.20110629.1133.5
+- Backported driver-agnostic-restart-instances.
+
 * Thu Jul 21 2011 Andrey Brindeyev <abrindeyev@griddynamics.com> - 2011.3-0.20110629.1133.4
 - Backported 882af3e9461b0d38c818adf28b77d13687c2f2ca commit from master
 
