@@ -1,6 +1,6 @@
 === modified file 'nova/compute/manager.py'
 --- nova/compute/manager.py	2011-07-21 17:37:32 +0000
-+++ nova/compute/manager.py	2011-07-25 10:33:16 +0000
++++ nova/compute/manager.py	2011-07-25 10:37:05 +0000
 @@ -146,7 +146,26 @@
  
      def init_host(self):
@@ -21,7 +21,7 @@
 +
 +            if instance['state'] == power_state.RUNNING and state != power_state.RUNNING \
 +                and FLAGS.start_guests_on_host_boot:
-+                LOG.debug(_('Rebooting instance %(name)s after nova-compute restart.'))
++                LOG.debug(_('Rebooting instance %(name)s after nova-compute restart.'), {'name': instance['name']})
 +                self.reboot_instance(admin_context, instance['id'])
 +            else:
 +                self.db.instance_set_state(admin_context, instance['id'], state)
