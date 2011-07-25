@@ -1,6 +1,6 @@
 === modified file 'nova/compute/manager.py'
 --- nova/compute/manager.py	2011-07-21 17:37:32 +0000
-+++ nova/compute/manager.py	2011-07-22 13:26:11 +0000
++++ nova/compute/manager.py	2011-07-25 10:22:00 +0000
 @@ -146,7 +146,26 @@
  
      def init_host(self):
@@ -24,14 +24,14 @@
 +                LOG.debug(_('Rebooting instance %(name)s after nova-compute restart.'))
 +                self.reboot_instance(admin_context, instance[id])
 +            else:
-+                self.db.instance_set_state(ctxt, instance['id'], state)
++                self.db.instance_set_state(admin_context, instance['id'], state)
  
      def _update_state(self, context, instance_id, state=None):
          """Update the state of an instance from the driver info."""
 
 === modified file 'nova/flags.py'
 --- nova/flags.py	2011-07-08 22:12:14 +0000
-+++ nova/flags.py	2011-07-22 13:26:11 +0000
++++ nova/flags.py	2011-07-22 12:47:01 +0000
 @@ -387,3 +387,6 @@
                   'Key/Multi-value list representng capabilities of this zone')
  DEFINE_string('build_plan_encryption_key', None,
@@ -42,7 +42,7 @@
 
 === modified file 'nova/virt/libvirt/connection.py'
 --- nova/virt/libvirt/connection.py	2011-07-21 03:22:29 +0000
-+++ nova/virt/libvirt/connection.py	2011-07-22 13:26:11 +0000
++++ nova/virt/libvirt/connection.py	2011-07-25 07:05:28 +0000
 @@ -121,8 +121,6 @@
                      'Define live migration behavior')
  flags.DEFINE_string('qemu_img', 'qemu-img',
@@ -82,4 +82,16 @@
  
      def _get_connection(self):
          if not self._wrapped_conn or not self._test_connection():
+@@ -592,11 +571,6 @@
+         LOG.debug(_("instance %s: is running"), instance['name'])
+         self.firewall_driver.apply_instance_filter(instance)
+ 
+-        if FLAGS.start_guests_on_host_boot:
+-            LOG.debug(_("instance %s: setting autostart ON") %
+-                      instance['name'])
+-            domain.setAutostart(1)
+-
+         def _wait_for_boot():
+             """Called at an interval until the VM is running."""
+             instance_name = instance['name']
 
