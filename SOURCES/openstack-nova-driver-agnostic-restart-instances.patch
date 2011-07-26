@@ -1,48 +1,77 @@
 === modified file 'nova/compute/manager.py'
 --- nova/compute/manager.py	2011-07-21 17:37:32 +0000
-+++ nova/compute/manager.py	2011-07-25 10:37:05 +0000
-@@ -146,7 +146,26 @@
++++ nova/compute/manager.py	2011-07-26 08:41:32 +0000
+@@ -44,6 +44,7 @@
  
+ from eventlet import greenthread
+ 
++import nova.context
+ from nova import exception
+ from nova import flags
+ import nova.image
+@@ -147,6 +148,29 @@
      def init_host(self):
          """Initialization for a standalone compute service."""
-+        # NOTE(nsokolov): based on itoumsn's implementation from libvirt driver
-+        from nova import context
          self.driver.init_host(host=self.host)
-+        admin_context = context.get_admin_context()
-+        for instance in self.db.instance_get_all_by_host(admin_context, self.host):
-+            try:
-+                LOG.debug(_('Checking state of %s'), instance['name'])
-+                state = self.driver.get_info(instance['name'])['state']
-+            except exception.NotFound:
-+                state = power_state.SHUTOFF
++        context = nova.context.get_admin_context()
++        instances = self.db.instance_get_all_by_host(context, self.host)
++        for instance in instances:
++            inst_name = instance['name']
++            db_state = instance['state']
++            drv_state = self._update_state(context, instance['id'])
 +
-+            LOG.debug(_('Current state of %(name)s is %(state)s, state in DB is %(db_state)s.'),
-+                          {'name': instance['name'], 'state': state, 'db_state': instance['state']})
++            expect_running = db_state == power_state.RUNNING \
++                             and drv_state != db_state
 +
-+            if instance['state'] == power_state.RUNNING and state != power_state.RUNNING \
-+                and FLAGS.start_guests_on_host_boot:
-+                LOG.debug(_('Rebooting instance %(name)s after nova-compute restart.'), {'name': instance['name']})
-+                self.reboot_instance(admin_context, instance['id'])
-+            else:
-+                self.db.instance_set_state(admin_context, instance['id'], state)
++            LOG.debug(_('Current state of %(inst_name)s is %(drv_state)s, '
++                        'state in DB is %(db_state)s.'), locals())
++
++            if (expect_running and FLAGS.resume_guests_state_on_host_boot)\
++               or FLAGS.start_guests_on_host_boot:
++                LOG.info(_('Rebooting instance %(inst_name)s after '
++                            'nova-compute restart.'), locals())
++                self.reboot_instance(context, instance['id'])
++            elif drv_state == power_state.RUNNING:
++                try: # Hyper-V and VMWareAPI drivers will raise and exception
++                    self.driver.ensure_filtering_rules_for_instance(instance)
++                except NotImplementedError:
++                    LOG.warning(_('Hypervisor driver does not support firewall rules'))
  
      def _update_state(self, context, instance_id, state=None):
          """Update the state of an instance from the driver info."""
+@@ -154,6 +178,7 @@
+ 
+         if state is None:
+             try:
++                LOG.debug(_('Checking state of %s'), instance_ref['name'])
+                 info = self.driver.get_info(instance_ref['name'])
+             except exception.NotFound:
+                 info = None
+@@ -164,6 +189,7 @@
+                 state = power_state.FAILED
+ 
+         self.db.instance_set_state(context, instance_id, state)
++        return state
+ 
+     def _update_launched_at(self, context, instance_id, launched_at=None):
+         """Update the launched_at parameter of the given instance."""
 
 === modified file 'nova/flags.py'
 --- nova/flags.py	2011-07-08 22:12:14 +0000
-+++ nova/flags.py	2011-07-22 12:47:01 +0000
-@@ -387,3 +387,6 @@
++++ nova/flags.py	2011-07-26 08:41:32 +0000
+@@ -387,3 +387,8 @@
                   'Key/Multi-value list representng capabilities of this zone')
  DEFINE_string('build_plan_encryption_key', None,
          '128bit (hex) encryption key for scheduler build plans.')
 +
 +DEFINE_bool('start_guests_on_host_boot', False,
 +            'Whether to restart guests when the host reboots')
++DEFINE_bool('resume_guests_state_on_host_boot', False,
++            'Whether to start guests, that was running before the host reboot')
 
 === modified file 'nova/virt/libvirt/connection.py'
 --- nova/virt/libvirt/connection.py	2011-07-21 03:22:29 +0000
-+++ nova/virt/libvirt/connection.py	2011-07-25 07:05:28 +0000
++++ nova/virt/libvirt/connection.py	2011-07-26 08:41:32 +0000
 @@ -121,8 +121,6 @@
                      'Define live migration behavior')
  flags.DEFINE_string('qemu_img', 'qemu-img',
